@@ -1,0 +1,19 @@
+{
+    "version": "1.0",
+    "source": "polycam",
+    "captureDate": "2026-01-15T12:00:00Z",
+    "latitude": 39.4699,
+    "longitude": -0.3763,
+    "altitude": 15.0,
+    "alignmentTransform": [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    ],
+    "meshFile": "raw.glb",
+    "meshVertices": 50000,
+    "meshFaces": 100000,
+    "deviceModel": "iPhone 14 Pro",
+    "notes": "Sample excavation scan - Valencia test site"
+}
