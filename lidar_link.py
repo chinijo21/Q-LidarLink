@@ -24,6 +24,9 @@ Usage in QGIS Python Console:
 """
 
 import os
+import zipfile
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -37,7 +40,8 @@ from qgis.core import (
 from qgis import processing
 
 # Local imports
-from geo_transform import wgs84_to_project_crs, apply_offset_to_layer, get_geometry_centroid_3d
+from geo_transform import (wgs84_to_project_crs, apply_offset_to_layer, 
+                           get_geometry_centroid_3d, apply_rotation_to_layer)
 from rotation_utils import arkit_to_gis_rotation
 from metadata_parser import auto_detect_and_parse, ScanMetadata
 
@@ -117,7 +121,14 @@ def load_scan(
             print("❌ Error: Failed to convert mesh to vector layer")
             return None
         
-        print(f"✓ Converted to {polygon_layer.featureCount()} polygons")
+        poly_count = polygon_layer.featureCount()
+        print(f"✓ Converted to {poly_count} polygons")
+        
+        # Performance warning for large meshes
+        if poly_count > 50000:
+            print(f"   ⚠️ WARNING: Large mesh ({poly_count} polygons)")
+            print("   QGIS may be slow. Consider decimating the mesh before import.")
+            print("   Tip: Use Meshlab or Blender to reduce polygon count to < 50k")
         
     except Exception as e:
         print(f"❌ Processing error: {e}")
@@ -147,14 +158,22 @@ def load_scan(
     print("   Applying transformation...")
     apply_offset_to_layer(polygon_layer, x_offset, y_offset, z_offset)
     
-    # Step 6: Apply rotation if specified (TODO: implement in future phase)
+    # Step 6: Apply rotation if specified
     if heading != 0 or pitch != 0 or roll != 0:
-        print(f"   ⚠️ Rotation ({heading}°, {pitch}°, {roll}°) - not yet implemented in MVP")
-        # Future: apply rotation around target coordinates
+        print(f"   Applying rotation: heading={heading:.1f}°, pitch={pitch:.1f}°, roll={roll:.1f}°")
+        try:
+            apply_rotation_to_layer(
+                polygon_layer, 
+                heading, pitch, roll,
+                target_x, target_y, target_z
+            )
+            print("   ✓ Rotation applied")
+        except Exception as e:
+            print(f"   ⚠️ Rotation failed: {e}")
     
     # Step 7: Apply scale if not 1.0 (TODO: implement in future phase)
     if scale != 1.0:
-        print(f"   ⚠️ Scale ({scale}x) - not yet implemented in MVP")
+        print(f"   ⚠️ Scale ({scale}x) - not yet implemented")
     
     # Step 8: Set layer name and add to project
     if layer_name is None:
@@ -211,12 +230,31 @@ def load_from_export(
     mesh_path = metadata.mesh_path
     if not os.path.isabs(mesh_path):
         export_folder = Path(export_path)
-        if export_folder.is_file():
-            # ZIP file - need to extract first
-            print("   ⚠️ ZIP extraction not yet implemented in MVP")
-            print("   Please extract the ZIP and provide folder path")
-            return None
-        mesh_path = str(export_folder / mesh_path)
+        if export_folder.is_file() and export_path.lower().endswith('.zip'):
+            # ZIP file - extract to temp directory
+            print("   Extracting ZIP archive...")
+            temp_dir = tempfile.mkdtemp(prefix='qlidarlink_')
+            try:
+                with zipfile.ZipFile(export_path, 'r') as zf:
+                    zf.extractall(temp_dir)
+                print(f"   ✓ Extracted to temporary folder")
+                
+                # Re-parse from extracted folder
+                metadata = auto_detect_and_parse(temp_dir)
+                if metadata.mesh_path:
+                    mesh_path = str(Path(temp_dir) / metadata.mesh_path) if not os.path.isabs(metadata.mesh_path) else metadata.mesh_path
+                else:
+                    # Search for mesh files
+                    for ext in ['*.glb', '*.gltf', '*.obj']:
+                        found = list(Path(temp_dir).rglob(ext))
+                        if found:
+                            mesh_path = str(found[0])
+                            break
+            except zipfile.BadZipFile:
+                print("❌ Error: Invalid ZIP file")
+                return None
+        else:
+            mesh_path = str(export_folder / mesh_path)
     
     # Use override coordinates or parsed coordinates
     if override_coordinates:

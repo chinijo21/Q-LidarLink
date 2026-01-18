@@ -32,27 +32,42 @@ layer = load_scan(
     mesh_path='/path/to/excavation.glb',
     latitude=39.4699,
     longitude=-0.3763,
-    altitude=10
+    altitude=10,
+    heading=45  # Rotate 45 degrees from north if needed
 )
 
-# Option B: Let the script read Polycam's metadata
+# Option B: Let the script read Polycam's metadata (even from ZIP)
 from lidar_link import load_from_export
-layer = load_from_export('/path/to/polycam_export/')
+layer = load_from_export('/path/to/polycam_export.zip')
 ```
 
 Then open View > 3D Map View and witness your model appear roughly where you scanned it.
 
+## Features
+
+- **Automatic geolocation**: WGS84 to project CRS transformation
+- **Rotation support**: Applies heading/pitch/roll from ARKit quaternions
+- **ZIP extraction**: Reads directly from Polycam ZIP exports
+- **Metadata parsing**: Auto-detects Polycam and SiteScape formats
+- **Performance warnings**: Tells you when your mesh is too big (spoiler: it probably is)
+
 ## Does it work?
 
-In theory, yes. In practice, GPS accuracy on mobile devices is what it is. If your scan appears 5 meters off, that's not a bug, that's your phone lying to you.
+Yes, with caveats:
+
+1. GPS accuracy on mobile devices is what it is. If your scan appears 5 meters off, that's not a bug, that's your phone lying to you.
+
+2. If your mesh has 500k polygons, QGIS will choke. Decimate in Meshlab/Blender first. Aim for < 50k polygons. The script will warn you, but it won't stop you from freezing QGIS.
+
+3. The Y-up to Z-up conversion math was written at 2am. It works in my tests. Your mileage may vary.
 
 ## Project Structure
 
 ```
 Q-LidarLink/
 ├── lidar_link.py        # The main script you'll actually use
-├── geo_transform.py     # Coordinate math that I had to look up
-├── rotation_utils.py    # Quaternions. Don't ask.
+├── geo_transform.py     # Coordinate and rotation math
+├── rotation_utils.py    # Quaternions to Euler (the fun part)
 ├── metadata_parser.py   # Reads those JSON files Polycam exports
 └── sample_data/         # Test files for when you don't have a real scan
 ```
@@ -61,8 +76,9 @@ Q-LidarLink/
 
 - [x] Basic coordinate transformation
 - [x] Polycam metadata parser
-- [ ] Automatic ZIP extraction (currently you have to unzip yourself, sorry)
-- [ ] Rotation from ARKit quaternions (because Y-up vs Z-up is a thing)
+- [x] Automatic ZIP extraction
+- [x] Rotation from ARKit quaternions
+- [ ] Scale transformation
 - [ ] Full QGIS plugin with buttons and dialogs
 - [ ] World peace
 
@@ -77,4 +93,3 @@ MIT. Do whatever you want with it. If you use it in a publication, a citation wo
 ---
 
 *Made for archaeologists who just want their iPhone scans to show up in the right place.*
-# Q-LidarLink

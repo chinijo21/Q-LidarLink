@@ -141,3 +141,94 @@ def get_geometry_centroid_3d(layer: QgsVectorLayer) -> tuple:
         return (0.0, 0.0, 0.0)
     
     return (x_sum / vertex_count, y_sum / vertex_count, z_sum / vertex_count)
+
+
+def apply_rotation_to_layer(layer: QgsVectorLayer,
+                             heading: float,
+                             pitch: float,
+                             roll: float,
+                             center_x: float,
+                             center_y: float,
+                             center_z: float = 0.0) -> QgsVectorLayer:
+    """
+    Rotate all geometries in a layer around a center point.
+    
+    Uses heading/pitch/roll convention:
+        - heading: rotation around Z-axis (yaw), 0 = North, clockwise positive
+        - pitch: rotation around X-axis
+        - roll: rotation around Y-axis
+    
+    Args:
+        layer: Input QgsVectorLayer with 3D geometry
+        heading: Z-axis rotation in degrees
+        pitch: X-axis rotation in degrees
+        roll: Y-axis rotation in degrees
+        center_x, center_y, center_z: Center of rotation
+        
+    Returns:
+        Modified layer (in-place modification)
+    """
+    import math
+    
+    if not layer.isValid():
+        raise ValueError("Invalid layer provided")
+    
+    # Convert degrees to radians
+    h = math.radians(-heading)  # Negate for clockwise convention
+    p = math.radians(pitch)
+    r = math.radians(roll)
+    
+    # Precompute rotation matrix (Z * Y * X order for heading/pitch/roll)
+    ch, sh = math.cos(h), math.sin(h)
+    cp, sp = math.cos(p), math.sin(p)
+    cr, sr = math.cos(r), math.sin(r)
+    
+    # Combined rotation matrix
+    r00 = ch * cr + sh * sp * sr
+    r01 = -ch * sr + sh * sp * cr
+    r02 = sh * cp
+    r10 = cp * sr
+    r11 = cp * cr
+    r12 = -sp
+    r20 = -sh * cr + ch * sp * sr
+    r21 = sh * sr + ch * sp * cr
+    r22 = ch * cp
+    
+    layer.startEditing()
+    
+    for feature in layer.getFeatures():
+        geom = feature.geometry()
+        if geom.isNull():
+            continue
+        
+        # Get WKT, parse vertices, rotate, rebuild
+        # For efficiency with large meshes, we work with the abstract geometry
+        abstract_geom = geom.get()
+        
+        # Transform each vertex
+        for i in range(abstract_geom.vertexCount()):
+            for j in range(abstract_geom.ringCount(i) if hasattr(abstract_geom, 'ringCount') else 1):
+                for k in range(abstract_geom.vertexCount(i, j) if hasattr(abstract_geom, 'vertexCount') else abstract_geom.vertexCount()):
+                    try:
+                        vertex_id = abstract_geom.vertexId(i, j, k) if hasattr(abstract_geom, 'vertexId') else k
+                        pt = abstract_geom.vertexAt(vertex_id) if isinstance(vertex_id, int) else abstract_geom.vertexAt(k)
+                    except:
+                        continue
+                    
+                    # Translate to origin
+                    px = pt.x() - center_x
+                    py = pt.y() - center_y
+                    pz = (pt.z() if pt.is3D() else 0.0) - center_z
+                    
+                    # Apply rotation
+                    new_x = r00 * px + r01 * py + r02 * pz + center_x
+                    new_y = r10 * px + r11 * py + r12 * pz + center_y
+                    new_z = r20 * px + r21 * py + r22 * pz + center_z
+                    
+                    # Move vertex (simplified - direct geometry manipulation)
+                    geom.moveVertex(new_x, new_y, new_z, k)
+        
+        layer.changeGeometry(feature.id(), geom)
+    
+    layer.commitChanges()
+    return layer
